@@ -1,0 +1,1217 @@
+Script started on Thu 05 Apr 2018 04:39:57 PM EDT
+loncare@bravo:~/Operating System Project$ exit./a.out addresses.txt[9Pcc project.c[K[K[K[K[K[K[K[K[K[K[K[Kcat project.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// Operating Systems Final Project
+// Dalibor Loncarevic, Michel Piljic
+// Project for 2 people
+// April 5th, 2018
+
+#define PAGES 256
+#define PHY_MEMORY 65536
+#define TLB_SIZE 16
+
+// structure used to hold TLB entries
+struct index {
+
+	int page;
+	int pageTable;
+	//used to check when it was last used
+	int timer;
+};
+
+// function prototypes
+int tlb_check (uint8_t);
+void add_tlb(uint8_t, int);
+
+//variable declarations
+struct index TLB[TLB_SIZE];
+int tlb_hit;
+
+//start of program
+int main(int argc, char* argv[]) {
+
+//did not enter an argument to open the file
+	if (argc != 2) {
+		printf("Please enter a file\n");
+		return 0;
+	
+	}
+
+	// variables
+	int pageTable[PAGES];
+	uint8_t memory[PHY_MEMORY];
+	uint8_t* back;
+	int i, input_num;
+	char inputer[200];
+	int addresses = 0;
+	uint16_t virtual;
+	uint8_t offset, page;
+	int frame,page_faults = 0, free_page = 0;
+	int physical;
+	int8_t value;
+
+	tlb_hit = 0;
+
+	//open both backing store and the argumen file for reading
+	int backingstore = open("BACKING_STORE.bin", O_RDONLY);
+	FILE *inputs = fopen (argv[1],"r");
+
+	//use memory mapping to allow for seamless access to simulate pageing
+	back = mmap(0, PHY_MEMORY, PROT_READ, MAP_PRIVATE, backingstore, 0);
+
+	//initalize tlb empty
+	for (i = 0; i < TLB_SIZE; i++) {
+
+		TLB[i].page = -1;
+		TLB[i].pageTable = -1;
+		TLB[i].timer = 0;	
+
+	}
+
+	// initialize page table empty
+	for(i = 0; i < PAGES; i++) {
+
+		pageTable[i] = -1;
+	}
+
+	// while still reading addresses from file
+	while (fgets(inputer,sizeof(inputer), inputs) != NULL) {
+
+	// obtaining data from address
+	input_num = atoi(inputer);
+	addresses++;
+	virtual = input_num & 0xFFFF;
+	offset = input_num & 0xFF; 
+	page = ((virtual & 0xFF00)>>8);
+
+	//check tlb
+	frame = tlb_check(page);
+	
+	//check page table
+	if (frame == -1) {
+
+		frame = pageTable[page];
+		// if it found the entry in page table add to tlb
+		if (frame != -1) {
+			add_tlb(page,pageTable[page]);
+		}
+	}
+
+	//add to memory if both checks fail
+	if (frame == -1) {
+
+		//page fault counter
+		page_faults++;
+		frame = free_page;
+		free_page++;
+
+		//copying the value from backing store into memory
+		memcpy(memory + frame*PAGES,back + page*PAGES,PAGES);
+		pageTable[page] = frame;
+		// adding to tlb
+		add_tlb(page,pageTable[page]);
+	
+	} 
+	// obtaining infromation from frame
+	physical = frame << 8 | offset;
+	value = memory[frame * PAGES + offset];
+
+	//printing the informaton of this address
+	printf("Virtual address: %d Physical Address: %d Value: %d\n",virtual, physical, value);
+}
+	//printing the statistics
+	printf("Number of Translated Addresses = %d\n", addresses);
+	printf("Page Faults = %d\n", page_faults);
+	printf("Page Fault rate = %.3f\n", (float)page_faults/addresses);
+	printf("TLB Hits = %d\n", tlb_hit);
+	printf("TLB Hit rate = %.3f\n", (float)tlb_hit/addresses);
+	//closing all files and mmap
+	munmap(back, PHY_MEMORY);
+	close (backingstore);
+	fclose (inputs);
+	return 0;
+// end of program
+}
+
+//checks if entry is in tlb, increments each timer by 1 if not found, if found returns the frame, otherwise -1
+int tlb_check (uint8_t reference) {
+
+	int answer = -1;
+	for (int i=0; i<TLB_SIZE; i++) {
+
+		if (reference == TLB[i].page) {
+
+			tlb_hit++;
+			answer = TLB[i].pageTable;
+			//reset timer
+			TLB[i].timer = 0;
+		}
+		else {
+
+			TLB[i].timer++;
+		}
+
+
+	}
+
+	return answer;
+}
+
+//adds the entry into the tlb based on the timer, entry with largest timer gets replaced
+void add_tlb (uint8_t page, int pageTable) {
+
+	int max = 0;
+	// fill empty places in TLB
+	for (int i = 0; i < TLB_SIZE; i++) {
+
+		if (TLB[i].page == -1) {
+			
+			TLB[i].page = page;
+			TLB[i].pageTable = pageTable;
+			TLB[i].timer = 0;
+			return;
+		}
+
+	}
+	// find largest time
+	for (int i = 0; i < TLB_SIZE; i++) {
+
+		if (TLB[i].timer > max) {
+
+			max = TLB[i].timer;
+		}
+		
+	}
+
+	// find tlb with largest timer and replace it
+	for (int i = 0; i < TLB_SIZE; i++) {
+
+		if (max == TLB[i].timer) {
+
+			TLB[i].page = page;
+			TLB[i].pageTable = pageTable;
+			TLB[i].timer = 0;
+			return;
+		}
+		
+	}
+
+}
+loncare@bravo:~/Operating System Project$ cat project.cexit[K./a.out addresses.txt[9Pcc project.c
+loncare@bravo:~/Operating System Project$ .cc project.c[1@at[C[C[C[C[C[C[C[C[C[Cexit[K./a.out addresses.txt
+Virtual address: 16916 Physical Address: 20 Value: 0
+Virtual address: 62493 Physical Address: 285 Value: 0
+Virtual address: 30198 Physical Address: 758 Value: 29
+Virtual address: 53683 Physical Address: 947 Value: 108
+Virtual address: 40185 Physical Address: 1273 Value: 0
+Virtual address: 28781 Physical Address: 1389 Value: 0
+Virtual address: 24462 Physical Address: 1678 Value: 23
+Virtual address: 48399 Physical Address: 1807 Value: 67
+Virtual address: 64815 Physical Address: 2095 Value: 75
+Virtual address: 18295 Physical Address: 2423 Value: -35
+Virtual address: 12218 Physical Address: 2746 Value: 11
+Virtual address: 22760 Physical Address: 3048 Value: 0
+Virtual address: 57982 Physical Address: 3198 Value: 56
+Virtual address: 27966 Physical Address: 3390 Value: 27
+Virtual address: 54894 Physical Address: 3694 Value: 53
+Virtual address: 38929 Physical Address: 3857 Value: 0
+Virtual address: 32865 Physical Address: 4193 Value: 0
+Virtual address: 64243 Physical Address: 4595 Value: -68
+Virtual address: 2315 Physical Address: 4619 Value: 66
+Virtual address: 64454 Physical Address: 5062 Value: 62
+Virtual address: 55041 Physical Address: 5121 Value: 0
+Virtual address: 18633 Physical Address: 5577 Value: 0
+Virtual address: 14557 Physical Address: 5853 Value: 0
+Virtual address: 61006 Physical Address: 5966 Value: 59
+Virtual address: 62615 Physical Address: 407 Value: 37
+Virtual address: 7591 Physical Address: 6311 Value: 105
+Virtual address: 64747 Physical Address: 6635 Value: 58
+Virtual address: 6727 Physical Address: 6727 Value: -111
+Virtual address: 32315 Physical Address: 6971 Value: -114
+Virtual address: 60645 Physical Address: 7397 Value: 0
+Virtual address: 6308 Physical Address: 7588 Value: 0
+Virtual address: 45688 Physical Address: 7800 Value: 0
+Virtual address: 969 Physical Address: 8137 Value: 0
+Virtual address: 40891 Physical Address: 8379 Value: -18
+Virtual address: 49294 Physical Address: 8590 Value: 48
+Virtual address: 41118 Physical Address: 8862 Value: 40
+Virtual address: 21395 Physical Address: 9107 Value: -28
+Virtual address: 6091 Physical Address: 9419 Value: -14
+Virtual address: 32541 Physical Address: 9501 Value: 0
+Virtual address: 17665 Physical Address: 9729 Value: 0
+Virtual address: 3784 Physical Address: 10184 Value: 0
+Virtual address: 28718 Physical Address: 1326 Value: 28
+Virtual address: 59240 Physical Address: 10344 Value: 0
+Virtual address: 40178 Physical Address: 1266 Value: 39
+Virtual address: 60086 Physical Address: 10678 Value: 58
+Virtual address: 42252 Physical Address: 10764 Value: 0
+Virtual address: 44770 Physical Address: 11234 Value: 43
+Virtual address: 22514 Physical Address: 11506 Value: 21
+Virtual address: 3067 Physical Address: 11771 Value: -2
+Virtual address: 15757 Physical Address: 11917 Value: 0
+Virtual address: 31649 Physical Address: 12193 Value: 0
+Virtual address: 10842 Physical Address: 12378 Value: 10
+Virtual address: 43765 Physical Address: 12789 Value: 0
+Virtual address: 33405 Physical Address: 12925 Value: 0
+Virtual address: 44954 Physical Address: 13210 Value: 43
+Virtual address: 56657 Physical Address: 13393 Value: 0
+Virtual address: 5003 Physical Address: 13707 Value: -30
+Virtual address: 50227 Physical Address: 13875 Value: 12
+Virtual address: 19358 Physical Address: 14238 Value: 18
+Virtual address: 36529 Physical Address: 14513 Value: 0
+Virtual address: 10392 Physical Address: 14744 Value: 0
+Virtual address: 58882 Physical Address: 14850 Value: 57
+Virtual address: 5129 Physical Address: 15113 Value: 0
+Virtual address: 58554 Physical Address: 15546 Value: 57
+Virtual address: 58584 Physical Address: 15576 Value: 0
+Virtual address: 27444 Physical Address: 15668 Value: 0
+Virtual address: 58982 Physical Address: 14950 Value: 57
+Virtual address: 51476 Physical Address: 15892 Value: 0
+Virtual address: 6796 Physical Address: 6796 Value: 0
+Virtual address: 21311 Physical Address: 9023 Value: -49
+Virtual address: 30705 Physical Address: 16369 Value: 0
+Virtual address: 28964 Physical Address: 16420 Value: 0
+Virtual address: 41003 Physical Address: 8747 Value: 10
+Virtual address: 20259 Physical Address: 16675 Value: -56
+Virtual address: 57857 Physical Address: 3073 Value: 0
+Virtual address: 63258 Physical Address: 16922 Value: 61
+Virtual address: 36374 Physical Address: 14358 Value: 35
+Virtual address: 692 Physical Address: 17332 Value: 0
+Virtual address: 43121 Physical Address: 17521 Value: 0
+Virtual address: 48128 Physical Address: 17664 Value: 0
+Virtual address: 34561 Physical Address: 17921 Value: 0
+Virtual address: 49213 Physical Address: 8509 Value: 0
+Virtual address: 36922 Physical Address: 18234 Value: 36
+Virtual address: 59162 Physical Address: 10266 Value: 57
+Virtual address: 50552 Physical Address: 18552 Value: 0
+Virtual address: 17866 Physical Address: 9930 Value: 17
+Virtual address: 18145 Physical Address: 18913 Value: 0
+Virtual address: 3884 Physical Address: 18988 Value: 0
+Virtual address: 54388 Physical Address: 19316 Value: 0
+Virtual address: 42932 Physical Address: 19636 Value: 0
+Virtual address: 46919 Physical Address: 19783 Value: -47
+Virtual address: 58892 Physical Address: 14860 Value: 0
+Virtual address: 8620 Physical Address: 20140 Value: 0
+Virtual address: 38336 Physical Address: 20416 Value: 0
+Virtual address: 64357 Physical Address: 4965 Value: 0
+Virtual address: 23387 Physical Address: 20571 Value: -42
+Virtual address: 42632 Physical Address: 20872 Value: 0
+Virtual address: 15913 Physical Address: 21033 Value: 0
+Virtual address: 15679 Physical Address: 11839 Value: 79
+Virtual address: 22501 Physical Address: 11493 Value: 0
+Virtual address: 37540 Physical Address: 21412 Value: 0
+Virtual address: 5527 Physical Address: 21655 Value: 101
+Virtual address: 63921 Physical Address: 21937 Value: 0
+Virtual address: 62716 Physical Address: 508 Value: 0
+Virtual address: 32874 Physical Address: 4202 Value: 32
+Virtual address: 64390 Physical Address: 4998 Value: 62
+Virtual address: 63101 Physical Address: 22141 Value: 0
+Virtual address: 61802 Physical Address: 22378 Value: 60
+Virtual address: 19648 Physical Address: 22720 Value: 0
+Virtual address: 29031 Physical Address: 16487 Value: 89
+Virtual address: 44981 Physical Address: 13237 Value: 0
+Virtual address: 28092 Physical Address: 3516 Value: 0
+Virtual address: 9448 Physical Address: 23016 Value: 0
+Virtual address: 44744 Physical Address: 11208 Value: 0
+Virtual address: 61496 Physical Address: 23096 Value: 0
+Virtual address: 31453 Physical Address: 23517 Value: 0
+Virtual address: 60746 Physical Address: 23626 Value: 59
+Virtual address: 12199 Physical Address: 2727 Value: -23
+Virtual address: 62255 Physical Address: 23855 Value: -53
+Virtual address: 21793 Physical Address: 24097 Value: 0
+Virtual address: 26544 Physical Address: 24496 Value: 0
+Virtual address: 14964 Physical Address: 24692 Value: 0
+Virtual address: 41462 Physical Address: 25078 Value: 40
+Virtual address: 56089 Physical Address: 25113 Value: 0
+Virtual address: 52038 Physical Address: 25414 Value: 50
+Virtual address: 47982 Physical Address: 25710 Value: 46
+Virtual address: 59484 Physical Address: 25948 Value: 0
+Virtual address: 50924 Physical Address: 26348 Value: 0
+Virtual address: 6942 Physical Address: 26398 Value: 6
+Virtual address: 34998 Physical Address: 26806 Value: 34
+Virtual address: 27069 Physical Address: 27069 Value: 0
+Virtual address: 51926 Physical Address: 27350 Value: 50
+Virtual address: 60645 Physical Address: 7397 Value: 0
+Virtual address: 43181 Physical Address: 17581 Value: 0
+Virtual address: 10559 Physical Address: 27455 Value: 79
+Virtual address: 4664 Physical Address: 27704 Value: 0
+Virtual address: 28578 Physical Address: 28066 Value: 27
+Virtual address: 59516 Physical Address: 25980 Value: 0
+Virtual address: 38912 Physical Address: 3840 Value: 0
+Virtual address: 63562 Physical Address: 28234 Value: 62
+Virtual address: 64846 Physical Address: 2126 Value: 63
+Virtual address: 62938 Physical Address: 28634 Value: 61
+Virtual address: 27194 Physical Address: 28730 Value: 26
+Virtual address: 28804 Physical Address: 1412 Value: 0
+Virtual address: 61703 Physical Address: 22279 Value: 65
+Virtual address: 10998 Physical Address: 12534 Value: 10
+Virtual address: 6596 Physical Address: 29124 Value: 0
+Virtual address: 37721 Physical Address: 29273 Value: 0
+Virtual address: 43430 Physical Address: 29606 Value: 42
+Virtual address: 22692 Physical Address: 2980 Value: 0
+Virtual address: 62971 Physical Address: 28667 Value: 126
+Virtual address: 47125 Physical Address: 29717 Value: 0
+Virtual address: 52521 Physical Address: 29993 Value: 0
+Virtual address: 34646 Physical Address: 18006 Value: 33
+Virtual address: 32889 Physical Address: 4217 Value: 0
+Virtual address: 13055 Physical Address: 30463 Value: -65
+Virtual address: 65416 Physical Address: 30600 Value: 0
+Virtual address: 62869 Physical Address: 28565 Value: 0
+Virtual address: 57314 Physical Address: 30946 Value: 55
+Virtual address: 12659 Physical Address: 31091 Value: 92
+Virtual address: 14052 Physical Address: 31460 Value: 0
+Virtual address: 32956 Physical Address: 4284 Value: 0
+Virtual address: 49273 Physical Address: 8569 Value: 0
+Virtual address: 50352 Physical Address: 14000 Value: 0
+Virtual address: 49737 Physical Address: 31561 Value: 0
+Virtual address: 15555 Physical Address: 31939 Value: 48
+Virtual address: 47475 Physical Address: 32115 Value: 92
+Virtual address: 15328 Physical Address: 32480 Value: 0
+Virtual address: 34621 Physical Address: 17981 Value: 0
+Virtual address: 51365 Physical Address: 32677 Value: 0
+Virtual address: 32820 Physical Address: 4148 Value: 0
+Virtual address: 48855 Physical Address: 32983 Value: -75
+Virtual address: 12224 Physical Address: 2752 Value: 0
+Virtual address: 2035 Physical Address: 33267 Value: -4
+Virtual address: 60539 Physical Address: 7291 Value: 30
+Virtual address: 14595 Physical Address: 33283 Value: 64
+Virtual address: 13853 Physical Address: 31261 Value: 0
+Virtual address: 24143 Physical Address: 33615 Value: -109
+Virtual address: 15216 Physical Address: 32368 Value: 0
+Virtual address: 8113 Physical Address: 33969 Value: 0
+Virtual address: 22640 Physical Address: 2928 Value: 0
+Virtual address: 32978 Physical Address: 4306 Value: 32
+Virtual address: 39151 Physical Address: 4079 Value: 59
+Virtual address: 19520 Physical Address: 22592 Value: 0
+Virtual address: 58141 Physical Address: 34077 Value: 0
+Virtual address: 63959 Physical Address: 21975 Value: 117
+Virtual address: 53040 Physical Address: 34352 Value: 0
+Virtual address: 55842 Physical Address: 34594 Value: 54
+Virtual address: 585 Physical Address: 17225 Value: 0
+Virtual address: 51229 Physical Address: 32541 Value: 0
+Virtual address: 64181 Physical Address: 4533 Value: 0
+Virtual address: 54879 Physical Address: 3679 Value: -105
+Virtual address: 28210 Physical Address: 34866 Value: 27
+Virtual address: 10268 Physical Address: 14620 Value: 0
+Virtual address: 15395 Physical Address: 31779 Value: 8
+Virtual address: 12884 Physical Address: 30292 Value: 0
+Virtual address: 2149 Physical Address: 35173 Value: 0
+Virtual address: 53483 Physical Address: 35563 Value: 58
+Virtual address: 59606 Physical Address: 26070 Value: 58
+Virtual address: 14981 Physical Address: 24709 Value: 0
+Virtual address: 36672 Physical Address: 35648 Value: 0
+Virtual address: 23197 Physical Address: 35997 Value: 0
+Virtual address: 36518 Physical Address: 14502 Value: 35
+Virtual address: 13361 Physical Address: 36145 Value: 0
+Virtual address: 19810 Physical Address: 36450 Value: 19
+Virtual address: 25955 Physical Address: 36707 Value: 88
+Virtual address: 62678 Physical Address: 470 Value: 61
+Virtual address: 26021 Physical Address: 36773 Value: 0
+Virtual address: 29409 Physical Address: 37089 Value: 0
+Virtual address: 38111 Physical Address: 37343 Value: 55
+Virtual address: 58573 Physical Address: 15565 Value: 0
+Virtual address: 56840 Physical Address: 37384 Value: 0
+Virtual address: 41306 Physical Address: 24922 Value: 40
+Virtual address: 54426 Physical Address: 19354 Value: 53
+Virtual address: 3617 Physical Address: 10017 Value: 0
+Virtual address: 50652 Physical Address: 18652 Value: 0
+Virtual address: 41452 Physical Address: 25068 Value: 0
+Virtual address: 20241 Physical Address: 16657 Value: 0
+Virtual address: 31723 Physical Address: 12267 Value: -6
+Virtual address: 53747 Physical Address: 1011 Value: 124
+Virtual address: 28550 Physical Address: 28038 Value: 27
+Virtual address: 23402 Physical Address: 20586 Value: 22
+Virtual address: 21205 Physical Address: 37845 Value: 0
+Virtual address: 56181 Physical Address: 25205 Value: 0
+Virtual address: 57470 Physical Address: 38014 Value: 56
+Virtual address: 39933 Physical Address: 38397 Value: 0
+Virtual address: 34964 Physical Address: 26772 Value: 0
+Virtual address: 24781 Physical Address: 38605 Value: 0
+Virtual address: 41747 Physical Address: 38675 Value: -60
+Virtual address: 62564 Physical Address: 356 Value: 0
+Virtual address: 58461 Physical Address: 15453 Value: 0
+Virtual address: 20858 Physical Address: 39034 Value: 20
+Virtual address: 49301 Physical Address: 8597 Value: 0
+Virtual address: 40572 Physical Address: 39292 Value: 0
+Virtual address: 23840 Physical Address: 39456 Value: 0
+Virtual address: 35278 Physical Address: 39886 Value: 34
+Virtual address: 62905 Physical Address: 28601 Value: 0
+Virtual address: 56650 Physical Address: 13386 Value: 55
+Virtual address: 11149 Physical Address: 40077 Value: 0
+Virtual address: 38920 Physical Address: 3848 Value: 0
+Virtual address: 23430 Physical Address: 20614 Value: 22
+Virtual address: 57592 Physical Address: 38136 Value: 0
+Virtual address: 3080 Physical Address: 40200 Value: 0
+Virtual address: 6677 Physical Address: 6677 Value: 0
+Virtual address: 50704 Physical Address: 26128 Value: 0
+Virtual address: 51883 Physical Address: 27307 Value: -86
+Virtual address: 62799 Physical Address: 28495 Value: 83
+Virtual address: 20188 Physical Address: 40668 Value: 0
+Virtual address: 1245 Physical Address: 40925 Value: 0
+Virtual address: 12220 Physical Address: 2748 Value: 0
+Virtual address: 17602 Physical Address: 41154 Value: 17
+Virtual address: 28609 Physical Address: 28097 Value: 0
+Virtual address: 42694 Physical Address: 20934 Value: 41
+Virtual address: 29826 Physical Address: 41346 Value: 29
+Virtual address: 13827 Physical Address: 31235 Value: -128
+Virtual address: 27336 Physical Address: 28872 Value: 0
+Virtual address: 53343 Physical Address: 35423 Value: 23
+Virtual address: 11533 Physical Address: 41485 Value: 0
+Virtual address: 41713 Physical Address: 41969 Value: 0
+Virtual address: 33890 Physical Address: 42082 Value: 33
+Virtual address: 4894 Physical Address: 13598 Value: 4
+Virtual address: 57599 Physical Address: 38143 Value: 63
+Virtual address: 3870 Physical Address: 18974 Value: 3
+Virtual address: 58622 Physical Address: 15614 Value: 57
+Virtual address: 29780 Physical Address: 41300 Value: 0
+Virtual address: 62553 Physical Address: 345 Value: 0
+Virtual address: 2303 Physical Address: 35327 Value: 63
+Virtual address: 51915 Physical Address: 27339 Value: -78
+Virtual address: 6251 Physical Address: 7531 Value: 26
+Virtual address: 38107 Physical Address: 37339 Value: 54
+Virtual address: 59325 Physical Address: 10429 Value: 0
+Virtual address: 61295 Physical Address: 42351 Value: -37
+Virtual address: 26699 Physical Address: 42571 Value: 18
+Virtual address: 51188 Physical Address: 42996 Value: 0
+Virtual address: 59519 Physical Address: 25983 Value: 31
+Virtual address: 7345 Physical Address: 43185 Value: 0
+Virtual address: 20325 Physical Address: 16741 Value: 0
+Virtual address: 39633 Physical Address: 43473 Value: 0
+Virtual address: 1562 Physical Address: 43546 Value: 1
+Virtual address: 7580 Physical Address: 6300 Value: 0
+Virtual address: 8170 Physical Address: 34026 Value: 7
+Virtual address: 62256 Physical Address: 23856 Value: 0
+Virtual address: 35823 Physical Address: 44015 Value: -5
+Virtual address: 27790 Physical Address: 44174 Value: 27
+Virtual address: 13191 Physical Address: 44423 Value: -31
+Virtual address: 9772 Physical Address: 44588 Value: 0
+Virtual address: 7477 Physical Address: 6197 Value: 0
+Virtual address: 44455 Physical Address: 44967 Value: 105
+Virtual address: 59546 Physical Address: 26010 Value: 58
+Virtual address: 49347 Physical Address: 8643 Value: 48
+Virtual address: 36539 Physical Address: 14523 Value: -82
+Virtual address: 12453 Physical Address: 45221 Value: 0
+Virtual address: 49640 Physical Address: 45544 Value: 0
+Virtual address: 28290 Physical Address: 34946 Value: 27
+Virtual address: 44817 Physical Address: 13073 Value: 0
+Virtual address: 8565 Physical Address: 20085 Value: 0
+Virtual address: 16399 Physical Address: 45583 Value: 3
+Virtual address: 41934 Physical Address: 38862 Value: 40
+Virtual address: 45457 Physical Address: 45969 Value: 0
+Virtual address: 33856 Physical Address: 42048 Value: 0
+Virtual address: 19498 Physical Address: 22570 Value: 19
+Virtual address: 17661 Physical Address: 41213 Value: 0
+Virtual address: 63829 Physical Address: 21845 Value: 0
+Virtual address: 42034 Physical Address: 46130 Value: 41
+Virtual address: 28928 Physical Address: 16384 Value: 0
+Virtual address: 30711 Physical Address: 16375 Value: -3
+Virtual address: 8800 Physical Address: 46432 Value: 0
+Virtual address: 52335 Physical Address: 46703 Value: 27
+Virtual address: 38775 Physical Address: 46967 Value: -35
+Virtual address: 52704 Physical Address: 30176 Value: 0
+Virtual address: 24380 Physical Address: 1596 Value: 0
+Virtual address: 19602 Physical Address: 22674 Value: 19
+Virtual address: 57998 Physical Address: 3214 Value: 56
+Virtual address: 2919 Physical Address: 11623 Value: -39
+Virtual address: 8362 Physical Address: 47274 Value: 8
+Virtual address: 17884 Physical Address: 9948 Value: 0
+Virtual address: 45737 Physical Address: 7849 Value: 0
+Virtual address: 47894 Physical Address: 25622 Value: 46
+Virtual address: 59667 Physical Address: 47379 Value: 68
+Virtual address: 10385 Physical Address: 14737 Value: 0
+Virtual address: 52782 Physical Address: 47662 Value: 51
+Virtual address: 64416 Physical Address: 5024 Value: 0
+Virtual address: 40946 Physical Address: 8434 Value: 39
+Virtual address: 16778 Physical Address: 48010 Value: 16
+Virtual address: 27159 Physical Address: 28695 Value: -123
+Virtual address: 24324 Physical Address: 1540 Value: 0
+Virtual address: 32450 Physical Address: 7106 Value: 31
+Virtual address: 9108 Physical Address: 48276 Value: 0
+Virtual address: 65305 Physical Address: 30489 Value: 0
+Virtual address: 19575 Physical Address: 22647 Value: 29
+Virtual address: 11117 Physical Address: 40045 Value: 0
+Virtual address: 65170 Physical Address: 48530 Value: 63
+Virtual address: 58013 Physical Address: 3229 Value: 0
+Virtual address: 61676 Physical Address: 23276 Value: 0
+Virtual address: 63510 Physical Address: 28182 Value: 62
+Virtual address: 17458 Physical Address: 41010 Value: 17
+Virtual address: 54675 Physical Address: 48787 Value: 100
+Virtual address: 1713 Physical Address: 43697 Value: 0
+Virtual address: 55105 Physical Address: 5185 Value: 0
+Virtual address: 65321 Physical Address: 30505 Value: 0
+Virtual address: 45278 Physical Address: 49118 Value: 44
+Virtual address: 26256 Physical Address: 49296 Value: 0
+Virtual address: 64198 Physical Address: 4550 Value: 62
+Virtual address: 29441 Physical Address: 49409 Value: 0
+Virtual address: 1928 Physical Address: 33160 Value: 0
+Virtual address: 39425 Physical Address: 43265 Value: 0
+Virtual address: 32000 Physical Address: 49664 Value: 0
+Virtual address: 28549 Physical Address: 28037 Value: 0
+Virtual address: 46295 Physical Address: 50135 Value: 53
+Virtual address: 22772 Physical Address: 3060 Value: 0
+Virtual address: 58228 Physical Address: 34164 Value: 0
+Virtual address: 63525 Physical Address: 28197 Value: 0
+Virtual address: 32602 Physical Address: 9562 Value: 31
+Virtual address: 46195 Physical Address: 50035 Value: 28
+Virtual address: 55849 Physical Address: 34601 Value: 0
+Virtual address: 46454 Physical Address: 50294 Value: 45
+Virtual address: 7487 Physical Address: 6207 Value: 79
+Virtual address: 33879 Physical Address: 42071 Value: 21
+Virtual address: 42004 Physical Address: 46100 Value: 0
+Virtual address: 8599 Physical Address: 20119 Value: 101
+Virtual address: 18641 Physical Address: 5585 Value: 0
+Virtual address: 49015 Physical Address: 50551 Value: -35
+Virtual address: 26830 Physical Address: 42702 Value: 26
+Virtual address: 34754 Physical Address: 18114 Value: 33
+Virtual address: 14668 Physical Address: 33356 Value: 0
+Virtual address: 38362 Physical Address: 20442 Value: 37
+Virtual address: 38791 Physical Address: 46983 Value: -31
+Virtual address: 4171 Physical Address: 50763 Value: 18
+Virtual address: 45975 Physical Address: 51095 Value: -27
+Virtual address: 14623 Physical Address: 33311 Value: 71
+Virtual address: 62393 Physical Address: 23993 Value: 0
+Virtual address: 64658 Physical Address: 6546 Value: 63
+Virtual address: 10963 Physical Address: 12499 Value: -76
+Virtual address: 9058 Physical Address: 48226 Value: 8
+Virtual address: 51031 Physical Address: 42839 Value: -43
+Virtual address: 32425 Physical Address: 7081 Value: 0
+Virtual address: 45483 Physical Address: 45995 Value: 106
+Virtual address: 44611 Physical Address: 11075 Value: -112
+Virtual address: 63664 Physical Address: 28336 Value: 0
+Virtual address: 54920 Physical Address: 3720 Value: 0
+Virtual address: 7663 Physical Address: 6383 Value: 123
+Virtual address: 56480 Physical Address: 51360 Value: 0
+Virtual address: 1489 Physical Address: 51665 Value: 0
+Virtual address: 28438 Physical Address: 27926 Value: 27
+Virtual address: 65449 Physical Address: 30633 Value: 0
+Virtual address: 12441 Physical Address: 45209 Value: 0
+Virtual address: 58530 Physical Address: 15522 Value: 57
+Virtual address: 63570 Physical Address: 28242 Value: 62
+Virtual address: 26251 Physical Address: 49291 Value: -94
+Virtual address: 15972 Physical Address: 21092 Value: 0
+Virtual address: 35826 Physical Address: 44018 Value: 34
+Virtual address: 5491 Physical Address: 21619 Value: 92
+Virtual address: 54253 Physical Address: 51949 Value: 0
+Virtual address: 49655 Physical Address: 45559 Value: 125
+Virtual address: 5868 Physical Address: 52204 Value: 0
+Virtual address: 20163 Physical Address: 40643 Value: -80
+Virtual address: 51079 Physical Address: 42887 Value: -31
+Virtual address: 21398 Physical Address: 9110 Value: 20
+Virtual address: 32756 Physical Address: 9716 Value: 0
+Virtual address: 64196 Physical Address: 4548 Value: 0
+Virtual address: 43218 Physical Address: 17618 Value: 42
+Virtual address: 21583 Physical Address: 52303 Value: 19
+Virtual address: 25086 Physical Address: 52734 Value: 24
+Virtual address: 45515 Physical Address: 46027 Value: 114
+Virtual address: 12893 Physical Address: 30301 Value: 0
+Virtual address: 22914 Physical Address: 52866 Value: 22
+Virtual address: 58969 Physical Address: 14937 Value: 0
+Virtual address: 20094 Physical Address: 40574 Value: 19
+Virtual address: 13730 Physical Address: 53154 Value: 13
+Virtual address: 44059 Physical Address: 53275 Value: 6
+Virtual address: 28931 Physical Address: 16387 Value: 64
+Virtual address: 13533 Physical Address: 36317 Value: 0
+Virtual address: 33134 Physical Address: 53614 Value: 32
+Virtual address: 28483 Physical Address: 27971 Value: -48
+Virtual address: 1220 Physical Address: 40900 Value: 0
+Virtual address: 38174 Physical Address: 20254 Value: 37
+Virtual address: 53502 Physical Address: 35582 Value: 52
+Virtual address: 43328 Physical Address: 29504 Value: 0
+Virtual address: 4970 Physical Address: 13674 Value: 4
+Virtual address: 8090 Physical Address: 33946 Value: 7
+Virtual address: 2661 Physical Address: 53861 Value: 0
+Virtual address: 53903 Physical Address: 54159 Value: -93
+Virtual address: 11025 Physical Address: 39953 Value: 0
+Virtual address: 26627 Physical Address: 42499 Value: 0
+Virtual address: 18117 Physical Address: 18885 Value: 0
+Virtual address: 14505 Physical Address: 5801 Value: 0
+Virtual address: 61528 Physical Address: 23128 Value: 0
+Virtual address: 20423 Physical Address: 16839 Value: -15
+Virtual address: 26962 Physical Address: 26962 Value: 26
+Virtual address: 36392 Physical Address: 14376 Value: 0
+Virtual address: 11365 Physical Address: 54373 Value: 0
+Virtual address: 50882 Physical Address: 26306 Value: 49
+Virtual address: 41668 Physical Address: 41924 Value: 0
+Virtual address: 30497 Physical Address: 16161 Value: 0
+Virtual address: 36216 Physical Address: 54648 Value: 0
+Virtual address: 5619 Physical Address: 21747 Value: 124
+Virtual address: 36983 Physical Address: 18295 Value: 29
+Virtual address: 59557 Physical Address: 26021 Value: 0
+Virtual address: 36663 Physical Address: 35639 Value: -51
+Virtual address: 36436 Physical Address: 14420 Value: 0
+Virtual address: 37057 Physical Address: 18369 Value: 0
+Virtual address: 23585 Physical Address: 54817 Value: 0
+Virtual address: 58791 Physical Address: 55207 Value: 105
+Virtual address: 46666 Physical Address: 55370 Value: 45
+Virtual address: 64475 Physical Address: 5083 Value: -10
+Virtual address: 21615 Physical Address: 52335 Value: 27
+Virtual address: 41090 Physical Address: 8834 Value: 40
+Virtual address: 1771 Physical Address: 43755 Value: -70
+Virtual address: 47513 Physical Address: 32153 Value: 0
+Virtual address: 39338 Physical Address: 55722 Value: 38
+Virtual address: 1390 Physical Address: 51566 Value: 1
+Virtual address: 38772 Physical Address: 46964 Value: 0
+Virtual address: 58149 Physical Address: 34085 Value: 0
+Virtual address: 7196 Physical Address: 43036 Value: 0
+Virtual address: 9123 Physical Address: 48291 Value: -24
+Virtual address: 7491 Physical Address: 6211 Value: 80
+Virtual address: 62616 Physical Address: 408 Value: 0
+Virtual address: 15436 Physical Address: 31820 Value: 0
+Virtual address: 17491 Physical Address: 41043 Value: 20
+Virtual address: 53656 Physical Address: 920 Value: 0
+Virtual address: 26449 Physical Address: 24401 Value: 0
+Virtual address: 34935 Physical Address: 26743 Value: 29
+Virtual address: 19864 Physical Address: 36504 Value: 0
+Virtual address: 51388 Physical Address: 32700 Value: 0
+Virtual address: 15155 Physical Address: 32307 Value: -52
+Virtual address: 64775 Physical Address: 2055 Value: 65
+Virtual address: 47969 Physical Address: 25697 Value: 0
+Virtual address: 16315 Physical Address: 55995 Value: -18
+Virtual address: 1342 Physical Address: 51518 Value: 1
+Virtual address: 51185 Physical Address: 42993 Value: 0
+Virtual address: 6043 Physical Address: 9371 Value: -26
+Virtual address: 21398 Physical Address: 9110 Value: 20
+Virtual address: 3273 Physical Address: 40393 Value: 0
+Virtual address: 9370 Physical Address: 22938 Value: 9
+Virtual address: 35463 Physical Address: 56199 Value: -95
+Virtual address: 28205 Physical Address: 34861 Value: 0
+Virtual address: 2351 Physical Address: 4655 Value: 75
+Virtual address: 28999 Physical Address: 16455 Value: 81
+Virtual address: 47699 Physical Address: 56403 Value: -108
+Virtual address: 46870 Physical Address: 19734 Value: 45
+Virtual address: 22311 Physical Address: 11303 Value: -55
+Virtual address: 22124 Physical Address: 56684 Value: 0
+Virtual address: 22427 Physical Address: 11419 Value: -26
+Virtual address: 49344 Physical Address: 8640 Value: 0
+Virtual address: 23224 Physical Address: 36024 Value: 0
+Virtual address: 5514 Physical Address: 21642 Value: 5
+Virtual address: 20504 Physical Address: 56856 Value: 0
+Virtual address: 376 Physical Address: 57208 Value: 0
+Virtual address: 2014 Physical Address: 33246 Value: 1
+Virtual address: 38700 Physical Address: 46892 Value: 0
+Virtual address: 13098 Physical Address: 44330 Value: 12
+Virtual address: 62435 Physical Address: 24035 Value: -8
+Virtual address: 48046 Physical Address: 25774 Value: 46
+Virtual address: 63464 Physical Address: 17128 Value: 0
+Virtual address: 12798 Physical Address: 31230 Value: 12
+Virtual address: 51178 Physical Address: 42986 Value: 49
+Virtual address: 8627 Physical Address: 20147 Value: 108
+Virtual address: 27083 Physical Address: 27083 Value: 114
+Virtual address: 47198 Physical Address: 29790 Value: 46
+Virtual address: 44021 Physical Address: 57589 Value: 0
+Virtual address: 32792 Physical Address: 4120 Value: 0
+Virtual address: 43996 Physical Address: 57564 Value: 0
+Virtual address: 41126 Physical Address: 8870 Value: 40
+Virtual address: 64244 Physical Address: 4596 Value: 0
+Virtual address: 37047 Physical Address: 18359 Value: 45
+Virtual address: 60281 Physical Address: 57721 Value: 0
+Virtual address: 52904 Physical Address: 47784 Value: 0
+Virtual address: 7768 Physical Address: 57944 Value: 0
+Virtual address: 55359 Physical Address: 58175 Value: 15
+Virtual address: 3230 Physical Address: 40350 Value: 3
+Virtual address: 44813 Physical Address: 13069 Value: 0
+Virtual address: 4116 Physical Address: 50708 Value: 0
+Virtual address: 65222 Physical Address: 48582 Value: 63
+Virtual address: 28083 Physical Address: 3507 Value: 108
+Virtual address: 60660 Physical Address: 7412 Value: 0
+Virtual address: 39 Physical Address: 58407 Value: 9
+Virtual address: 328 Physical Address: 57160 Value: 0
+Virtual address: 47868 Physical Address: 56572 Value: 0
+Virtual address: 13009 Physical Address: 30417 Value: 0
+Virtual address: 22378 Physical Address: 11370 Value: 21
+Virtual address: 39304 Physical Address: 55688 Value: 0
+Virtual address: 11171 Physical Address: 40099 Value: -24
+Virtual address: 8079 Physical Address: 33935 Value: -29
+Virtual address: 52879 Physical Address: 47759 Value: -93
+Virtual address: 5123 Physical Address: 15107 Value: 0
+Virtual address: 4356 Physical Address: 58628 Value: 0
+Virtual address: 45745 Physical Address: 7857 Value: 0
+Virtual address: 32952 Physical Address: 4280 Value: 0
+Virtual address: 4657 Physical Address: 27697 Value: 0
+Virtual address: 24142 Physical Address: 33614 Value: 23
+Virtual address: 23319 Physical Address: 20503 Value: -59
+Virtual address: 13607 Physical Address: 53031 Value: 73
+Virtual address: 46304 Physical Address: 50144 Value: 0
+Virtual address: 17677 Physical Address: 9741 Value: 0
+Virtual address: 59691 Physical Address: 47403 Value: 74
+Virtual address: 50967 Physical Address: 42775 Value: -59
+Virtual address: 7817 Physical Address: 57993 Value: 0
+Virtual address: 8545 Physical Address: 20065 Value: 0
+Virtual address: 55297 Physical Address: 58113 Value: 0
+Virtual address: 52954 Physical Address: 47834 Value: 51
+Virtual address: 39720 Physical Address: 38184 Value: 0
+Virtual address: 18455 Physical Address: 5399 Value: 5
+Virtual address: 30349 Physical Address: 59021 Value: 0
+Virtual address: 63270 Physical Address: 16934 Value: 61
+Virtual address: 27156 Physical Address: 28692 Value: 0
+Virtual address: 20614 Physical Address: 56966 Value: 20
+Virtual address: 19372 Physical Address: 14252 Value: 0
+Virtual address: 48689 Physical Address: 32817 Value: 0
+Virtual address: 49386 Physical Address: 8682 Value: 48
+Virtual address: 50584 Physical Address: 18584 Value: 0
+Virtual address: 51936 Physical Address: 27360 Value: 0
+Virtual address: 34705 Physical Address: 18065 Value: 0
+Virtual address: 13653 Physical Address: 53077 Value: 0
+Virtual address: 50077 Physical Address: 59293 Value: 0
+Virtual address: 54518 Physical Address: 19446 Value: 53
+Virtual address: 41482 Physical Address: 41738 Value: 40
+Virtual address: 4169 Physical Address: 50761 Value: 0
+Virtual address: 36118 Physical Address: 54550 Value: 35
+Virtual address: 9584 Physical Address: 59504 Value: 0
+Virtual address: 18490 Physical Address: 5434 Value: 18
+Virtual address: 55420 Physical Address: 58236 Value: 0
+Virtual address: 5708 Physical Address: 52044 Value: 0
+Virtual address: 23506 Physical Address: 20690 Value: 22
+Virtual address: 15391 Physical Address: 31775 Value: 7
+Virtual address: 36368 Physical Address: 14352 Value: 0
+Virtual address: 38976 Physical Address: 3904 Value: 0
+Virtual address: 50406 Physical Address: 14054 Value: 49
+Virtual address: 49236 Physical Address: 8532 Value: 0
+Virtual address: 65035 Physical Address: 48395 Value: -126
+Virtual address: 30120 Physical Address: 680 Value: 0
+Virtual address: 62551 Physical Address: 343 Value: 21
+Virtual address: 46809 Physical Address: 55513 Value: 0
+Virtual address: 21687 Physical Address: 52407 Value: 45
+Virtual address: 53839 Physical Address: 54095 Value: -109
+Virtual address: 2098 Physical Address: 35122 Value: 2
+Virtual address: 12364 Physical Address: 45132 Value: 0
+Virtual address: 45366 Physical Address: 45878 Value: 44
+Virtual address: 50437 Physical Address: 18437 Value: 0
+Virtual address: 36675 Physical Address: 35651 Value: -48
+Virtual address: 55382 Physical Address: 58198 Value: 54
+Virtual address: 11846 Physical Address: 59718 Value: 11
+Virtual address: 49127 Physical Address: 50663 Value: -7
+Virtual address: 19900 Physical Address: 36540 Value: 0
+Virtual address: 20554 Physical Address: 56906 Value: 20
+Virtual address: 19219 Physical Address: 14099 Value: -60
+Virtual address: 51483 Physical Address: 15899 Value: 70
+Virtual address: 58090 Physical Address: 3306 Value: 56
+Virtual address: 39074 Physical Address: 4002 Value: 38
+Virtual address: 16060 Physical Address: 21180 Value: 0
+Virtual address: 10447 Physical Address: 14799 Value: 51
+Virtual address: 54169 Physical Address: 51865 Value: 0
+Virtual address: 20634 Physical Address: 56986 Value: 20
+Virtual address: 57555 Physical Address: 38099 Value: 52
+Virtual address: 61210 Physical Address: 42266 Value: 59
+Virtual address: 269 Physical Address: 57101 Value: 0
+Virtual address: 33154 Physical Address: 53634 Value: 32
+Virtual address: 64487 Physical Address: 5095 Value: -7
+Virtual address: 61223 Physical Address: 42279 Value: -55
+Virtual address: 47292 Physical Address: 29884 Value: 0
+Virtual address: 21852 Physical Address: 24156 Value: 0
+Virtual address: 5281 Physical Address: 15265 Value: 0
+Virtual address: 45912 Physical Address: 51032 Value: 0
+Virtual address: 32532 Physical Address: 9492 Value: 0
+Virtual address: 63067 Physical Address: 22107 Value: -106
+Virtual address: 41683 Physical Address: 41939 Value: -76
+Virtual address: 20981 Physical Address: 39157 Value: 0
+Virtual address: 33881 Physical Address: 42073 Value: 0
+Virtual address: 41785 Physical Address: 38713 Value: 0
+Virtual address: 4580 Physical Address: 58852 Value: 0
+Virtual address: 41389 Physical Address: 25005 Value: 0
+Virtual address: 28572 Physical Address: 28060 Value: 0
+Virtual address: 782 Physical Address: 7950 Value: 0
+Virtual address: 30273 Physical Address: 58945 Value: 0
+Virtual address: 62267 Physical Address: 23867 Value: -50
+Virtual address: 17922 Physical Address: 18690 Value: 17
+Virtual address: 63238 Physical Address: 16902 Value: 61
+Virtual address: 3308 Physical Address: 40428 Value: 0
+Virtual address: 26545 Physical Address: 24497 Value: 0
+Virtual address: 44395 Physical Address: 44907 Value: 90
+Virtual address: 39120 Physical Address: 4048 Value: 0
+Virtual address: 21706 Physical Address: 52426 Value: 21
+Virtual address: 7144 Physical Address: 26600 Value: 0
+Virtual address: 30244 Physical Address: 58916 Value: 0
+Virtual address: 3725 Physical Address: 10125 Value: 0
+Virtual address: 54632 Physical Address: 48744 Value: 0
+Virtual address: 30574 Physical Address: 16238 Value: 29
+Virtual address: 8473 Physical Address: 19993 Value: 0
+Virtual address: 12386 Physical Address: 45154 Value: 12
+Virtual address: 41114 Physical Address: 8858 Value: 40
+Virtual address: 57930 Physical Address: 3146 Value: 56
+Virtual address: 15341 Physical Address: 32493 Value: 0
+Virtual address: 15598 Physical Address: 31982 Value: 15
+Virtual address: 59922 Physical Address: 10514 Value: 58
+Virtual address: 18226 Physical Address: 2354 Value: 17
+Virtual address: 48162 Physical Address: 17698 Value: 47
+Virtual address: 41250 Physical Address: 24866 Value: 40
+Virtual address: 1512 Physical Address: 51688 Value: 0
+Virtual address: 2546 Physical Address: 4850 Value: 2
+Virtual address: 41682 Physical Address: 41938 Value: 40
+Virtual address: 322 Physical Address: 57154 Value: 0
+Virtual address: 880 Physical Address: 8048 Value: 0
+Virtual address: 20891 Physical Address: 39067 Value: 102
+Virtual address: 56604 Physical Address: 13340 Value: 0
+Virtual address: 40166 Physical Address: 1254 Value: 39
+Virtual address: 26791 Physical Address: 42663 Value: 41
+Virtual address: 44560 Physical Address: 11024 Value: 0
+Virtual address: 38698 Physical Address: 46890 Value: 37
+Virtual address: 64127 Physical Address: 4479 Value: -97
+Virtual address: 15028 Physical Address: 24756 Value: 0
+Virtual address: 38669 Physical Address: 46861 Value: 0
+Virtual address: 45637 Physical Address: 7749 Value: 0
+Virtual address: 43151 Physical Address: 17551 Value: 35
+Virtual address: 9465 Physical Address: 23033 Value: 0
+Virtual address: 2498 Physical Address: 4802 Value: 2
+Virtual address: 13978 Physical Address: 31386 Value: 13
+Virtual address: 16326 Physical Address: 56006 Value: 15
+Virtual address: 51442 Physical Address: 32754 Value: 50
+Virtual address: 34845 Physical Address: 26653 Value: 0
+Virtual address: 63667 Physical Address: 28339 Value: 44
+Virtual address: 39370 Physical Address: 55754 Value: 38
+Virtual address: 55671 Physical Address: 60023 Value: 93
+Virtual address: 64496 Physical Address: 5104 Value: 0
+Virtual address: 7767 Physical Address: 57943 Value: -107
+Virtual address: 6283 Physical Address: 7563 Value: 34
+Virtual address: 55884 Physical Address: 34636 Value: 0
+Virtual address: 61103 Physical Address: 6063 Value: -85
+Virtual address: 10184 Physical Address: 60360 Value: 0
+Virtual address: 39543 Physical Address: 43383 Value: -99
+Virtual address: 9555 Physical Address: 59475 Value: 84
+Virtual address: 13963 Physical Address: 31371 Value: -94
+Virtual address: 58975 Physical Address: 14943 Value: -105
+Virtual address: 19537 Physical Address: 22609 Value: 0
+Virtual address: 6101 Physical Address: 9429 Value: 0
+Virtual address: 41421 Physical Address: 25037 Value: 0
+Virtual address: 45502 Physical Address: 46014 Value: 44
+Virtual address: 29328 Physical Address: 37008 Value: 0
+Virtual address: 8149 Physical Address: 34005 Value: 0
+Virtual address: 25450 Physical Address: 60522 Value: 24
+Virtual address: 58944 Physical Address: 14912 Value: 0
+Virtual address: 50666 Physical Address: 18666 Value: 49
+Virtual address: 23084 Physical Address: 35884 Value: 0
+Virtual address: 36468 Physical Address: 14452 Value: 0
+Virtual address: 33645 Physical Address: 60781 Value: 0
+Virtual address: 25002 Physical Address: 52650 Value: 24
+Virtual address: 53715 Physical Address: 979 Value: 116
+Virtual address: 60173 Physical Address: 57613 Value: 0
+Virtual address: 46354 Physical Address: 50194 Value: 45
+Virtual address: 4708 Physical Address: 27748 Value: 0
+Virtual address: 28208 Physical Address: 34864 Value: 0
+Virtual address: 58844 Physical Address: 55260 Value: 0
+Virtual address: 22173 Physical Address: 56733 Value: 0
+Virtual address: 8535 Physical Address: 20055 Value: 85
+Virtual address: 42261 Physical Address: 10773 Value: 0
+Virtual address: 29687 Physical Address: 49655 Value: -3
+Virtual address: 37799 Physical Address: 29351 Value: -23
+Virtual address: 22566 Physical Address: 2854 Value: 22
+Virtual address: 62520 Physical Address: 312 Value: 0
+Virtual address: 4098 Physical Address: 50690 Value: 4
+Virtual address: 47999 Physical Address: 25727 Value: -33
+Virtual address: 49660 Physical Address: 45564 Value: 0
+Virtual address: 37063 Physical Address: 18375 Value: 49
+Virtual address: 41856 Physical Address: 38784 Value: 0
+Virtual address: 5417 Physical Address: 21545 Value: 0
+Virtual address: 48856 Physical Address: 32984 Value: 0
+Virtual address: 10682 Physical Address: 27578 Value: 10
+Virtual address: 22370 Physical Address: 11362 Value: 21
+Virtual address: 63281 Physical Address: 16945 Value: 0
+Virtual address: 62452 Physical Address: 24052 Value: 0
+Virtual address: 50532 Physical Address: 18532 Value: 0
+Virtual address: 9022 Physical Address: 48190 Value: 8
+Virtual address: 59300 Physical Address: 10404 Value: 0
+Virtual address: 58660 Physical Address: 55076 Value: 0
+Virtual address: 56401 Physical Address: 51281 Value: 0
+Virtual address: 8518 Physical Address: 20038 Value: 8
+Virtual address: 63066 Physical Address: 22106 Value: 61
+Virtual address: 63250 Physical Address: 16914 Value: 61
+Virtual address: 48592 Physical Address: 2000 Value: 0
+Virtual address: 28771 Physical Address: 1379 Value: 24
+Virtual address: 37673 Physical Address: 29225 Value: 0
+Virtual address: 60776 Physical Address: 23656 Value: 0
+Virtual address: 56438 Physical Address: 51318 Value: 55
+Virtual address: 60424 Physical Address: 7176 Value: 0
+Virtual address: 39993 Physical Address: 1081 Value: 0
+Virtual address: 56004 Physical Address: 34756 Value: 0
+Virtual address: 59002 Physical Address: 14970 Value: 57
+Virtual address: 33982 Physical Address: 42174 Value: 33
+Virtual address: 25498 Physical Address: 60570 Value: 24
+Virtual address: 57047 Physical Address: 37591 Value: -75
+Virtual address: 1401 Physical Address: 51577 Value: 0
+Virtual address: 15130 Physical Address: 32282 Value: 14
+Virtual address: 42960 Physical Address: 19664 Value: 0
+Virtual address: 61827 Physical Address: 22403 Value: 96
+Virtual address: 32442 Physical Address: 7098 Value: 31
+Virtual address: 64304 Physical Address: 4912 Value: 0
+Virtual address: 30273 Physical Address: 58945 Value: 0
+Virtual address: 38082 Physical Address: 37314 Value: 37
+Virtual address: 22404 Physical Address: 11396 Value: 0
+Virtual address: 3808 Physical Address: 10208 Value: 0
+Virtual address: 16883 Physical Address: 48115 Value: 124
+Virtual address: 23111 Physical Address: 35911 Value: -111
+Virtual address: 62417 Physical Address: 24017 Value: 0
+Virtual address: 60364 Physical Address: 57804 Value: 0
+Virtual address: 4542 Physical Address: 58814 Value: 4
+Virtual address: 14829 Physical Address: 33517 Value: 0
+Virtual address: 44964 Physical Address: 13220 Value: 0
+Virtual address: 33924 Physical Address: 42116 Value: 0
+Virtual address: 2141 Physical Address: 35165 Value: 0
+Virtual address: 19245 Physical Address: 14125 Value: 0
+Virtual address: 47168 Physical Address: 29760 Value: 0
+Virtual address: 24048 Physical Address: 39664 Value: 0
+Virtual address: 1022 Physical Address: 8190 Value: 0
+Virtual address: 23075 Physical Address: 35875 Value: -120
+Virtual address: 24888 Physical Address: 52536 Value: 0
+Virtual address: 49247 Physical Address: 8543 Value: 23
+Virtual address: 4900 Physical Address: 13604 Value: 0
+Virtual address: 22656 Physical Address: 2944 Value: 0
+Virtual address: 34117 Physical Address: 60997 Value: 0
+Virtual address: 55555 Physical Address: 59907 Value: 64
+Virtual address: 48947 Physical Address: 50483 Value: -52
+Virtual address: 59533 Physical Address: 25997 Value: 0
+Virtual address: 21312 Physical Address: 9024 Value: 0
+Virtual address: 21415 Physical Address: 9127 Value: -23
+Virtual address: 813 Physical Address: 7981 Value: 0
+Virtual address: 19419 Physical Address: 14299 Value: -10
+Virtual address: 1999 Physical Address: 33231 Value: -13
+Virtual address: 20155 Physical Address: 40635 Value: -82
+Virtual address: 21521 Physical Address: 52241 Value: 0
+Virtual address: 13670 Physical Address: 53094 Value: 13
+Virtual address: 19289 Physical Address: 14169 Value: 0
+Virtual address: 58483 Physical Address: 15475 Value: 28
+Virtual address: 41318 Physical Address: 24934 Value: 40
+Virtual address: 16151 Physical Address: 55831 Value: -59
+Virtual address: 13611 Physical Address: 53035 Value: 74
+Virtual address: 21514 Physical Address: 52234 Value: 21
+Virtual address: 13499 Physical Address: 36283 Value: 46
+Virtual address: 45583 Physical Address: 7695 Value: -125
+Virtual address: 49013 Physical Address: 50549 Value: 0
+Virtual address: 64843 Physical Address: 2123 Value: 82
+Virtual address: 63485 Physical Address: 17149 Value: 0
+Virtual address: 38697 Physical Address: 46889 Value: 0
+Virtual address: 59188 Physical Address: 10292 Value: 0
+Virtual address: 24593 Physical Address: 38417 Value: 0
+Virtual address: 57641 Physical Address: 61225 Value: 0
+Virtual address: 36524 Physical Address: 14508 Value: 0
+Virtual address: 56980 Physical Address: 37524 Value: 0
+Virtual address: 36810 Physical Address: 35786 Value: 35
+Virtual address: 6096 Physical Address: 9424 Value: 0
+Virtual address: 11070 Physical Address: 39998 Value: 10
+Virtual address: 60124 Physical Address: 10716 Value: 0
+Virtual address: 37576 Physical Address: 21448 Value: 0
+Virtual address: 15096 Physical Address: 24824 Value: 0
+Virtual address: 45247 Physical Address: 49087 Value: 47
+Virtual address: 32783 Physical Address: 4111 Value: 3
+Virtual address: 58390 Physical Address: 15382 Value: 57
+Virtual address: 60873 Physical Address: 23753 Value: 0
+Virtual address: 23719 Physical Address: 54951 Value: 41
+Virtual address: 24385 Physical Address: 1601 Value: 0
+Virtual address: 22307 Physical Address: 11299 Value: -56
+Virtual address: 17375 Physical Address: 61663 Value: -9
+Virtual address: 15990 Physical Address: 21110 Value: 15
+Virtual address: 20526 Physical Address: 56878 Value: 20
+Virtual address: 25904 Physical Address: 36656 Value: 0
+Virtual address: 42224 Physical Address: 46320 Value: 0
+Virtual address: 9311 Physical Address: 22879 Value: 23
+Virtual address: 7862 Physical Address: 58038 Value: 7
+Virtual address: 3835 Physical Address: 10235 Value: -66
+Virtual address: 30535 Physical Address: 16199 Value: -47
+Virtual address: 65179 Physical Address: 48539 Value: -90
+Virtual address: 57387 Physical Address: 37931 Value: 10
+Virtual address: 63579 Physical Address: 28251 Value: 22
+Virtual address: 4946 Physical Address: 13650 Value: 4
+Virtual address: 9037 Physical Address: 48205 Value: 0
+Virtual address: 61033 Physical Address: 5993 Value: 0
+Virtual address: 55543 Physical Address: 58359 Value: 61
+Virtual address: 50361 Physical Address: 14009 Value: 0
+Virtual address: 6480 Physical Address: 29008 Value: 0
+Virtual address: 14042 Physical Address: 31450 Value: 13
+Virtual address: 21531 Physical Address: 52251 Value: 6
+Virtual address: 39195 Physical Address: 55579 Value: 70
+Virtual address: 37511 Physical Address: 21383 Value: -95
+Virtual address: 23696 Physical Address: 54928 Value: 0
+Virtual address: 27440 Physical Address: 15664 Value: 0
+Virtual address: 28201 Physical Address: 34857 Value: 0
+Virtual address: 23072 Physical Address: 35872 Value: 0
+Virtual address: 7814 Physical Address: 57990 Value: 7
+Virtual address: 6552 Physical Address: 29080 Value: 0
+Virtual address: 43637 Physical Address: 12661 Value: 0
+Virtual address: 35113 Physical Address: 39721 Value: 0
+Virtual address: 34890 Physical Address: 26698 Value: 34
+Virtual address: 61297 Physical Address: 42353 Value: 0
+Virtual address: 45633 Physical Address: 7745 Value: 0
+Virtual address: 61431 Physical Address: 42487 Value: -3
+Virtual address: 46032 Physical Address: 51152 Value: 0
+Virtual address: 18774 Physical Address: 61782 Value: 18
+Virtual address: 62991 Physical Address: 22031 Value: -125
+Virtual address: 28059 Physical Address: 3483 Value: 102
+Virtual address: 35229 Physical Address: 39837 Value: 0
+Virtual address: 51230 Physical Address: 32542 Value: 50
+Virtual address: 14405 Physical Address: 5701 Value: 0
+Virtual address: 52242 Physical Address: 46610 Value: 51
+Virtual address: 43153 Physical Address: 17553 Value: 0
+Virtual address: 2709 Physical Address: 53909 Value: 0
+Virtual address: 47963 Physical Address: 25691 Value: -42
+Virtual address: 36943 Physical Address: 18255 Value: 19
+Virtual address: 54066 Physical Address: 51762 Value: 52
+Virtual address: 10054 Physical Address: 60230 Value: 9
+Virtual address: 43051 Physical Address: 17451 Value: 10
+Virtual address: 11525 Physical Address: 41477 Value: 0
+Virtual address: 17684 Physical Address: 9748 Value: 0
+Virtual address: 41681 Physical Address: 41937 Value: 0
+Virtual address: 27883 Physical Address: 44267 Value: 58
+Virtual address: 56909 Physical Address: 37453 Value: 0
+Virtual address: 45772 Physical Address: 7884 Value: 0
+Virtual address: 27496 Physical Address: 15720 Value: 0
+Virtual address: 46842 Physical Address: 55546 Value: 45
+Virtual address: 38734 Physical Address: 46926 Value: 37
+Virtual address: 28972 Physical Address: 16428 Value: 0
+Virtual address: 59684 Physical Address: 47396 Value: 0
+Virtual address: 11384 Physical Address: 54392 Value: 0
+Virtual address: 21018 Physical Address: 37658 Value: 20
+Virtual address: 2192 Physical Address: 35216 Value: 0
+Virtual address: 18384 Physical Address: 2512 Value: 0
+Virtual address: 13464 Physical Address: 36248 Value: 0
+Virtual address: 31018 Physical Address: 61994 Value: 30
+Virtual address: 62958 Physical Address: 28654 Value: 61
+Virtual address: 30611 Physical Address: 16275 Value: -28
+Virtual address: 1913 Physical Address: 33145 Value: 0
+Virtual address: 18904 Physical Address: 61912 Value: 0
+Virtual address: 26773 Physical Address: 42645 Value: 0
+Virtual address: 55491 Physical Address: 58307 Value: 48
+Virtual address: 21899 Physical Address: 24203 Value: 98
+Virtual address: 64413 Physical Address: 5021 Value: 0
+Virtual address: 47134 Physical Address: 29726 Value: 46
+Virtual address: 23172 Physical Address: 35972 Value: 0
+Virtual address: 7262 Physical Address: 43102 Value: 7
+Virtual address: 12705 Physical Address: 31137 Value: 0
+Virtual address: 7522 Physical Address: 6242 Value: 7
+Virtual address: 58815 Physical Address: 55231 Value: 111
+Virtual address: 34916 Physical Address: 26724 Value: 0
+Virtual address: 3802 Physical Address: 10202 Value: 3
+Virtual address: 58008 Physical Address: 3224 Value: 0
+Virtual address: 1239 Physical Address: 40919 Value: 53
+Virtual address: 63947 Physical Address: 21963 Value: 114
+Virtual address: 381 Physical Address: 57213 Value: 0
+Virtual address: 60734 Physical Address: 23614 Value: 59
+Virtual address: 48769 Physical Address: 32897 Value: 0
+Virtual address: 41938 Physical Address: 38866 Value: 40
+Virtual address: 38025 Physical Address: 37257 Value: 0
+Virtual address: 55099 Physical Address: 5179 Value: -50
+Virtual address: 56691 Physical Address: 13427 Value: 92
+Virtual address: 39530 Physical Address: 43370 Value: 38
+Virtual address: 59003 Physical Address: 14971 Value: -98
+Virtual address: 6029 Physical Address: 9357 Value: 0
+Virtual address: 20920 Physical Address: 39096 Value: 0
+Virtual address: 8077 Physical Address: 33933 Value: 0
+Virtual address: 42633 Physical Address: 20873 Value: 0
+Virtual address: 17443 Physical Address: 40995 Value: 8
+Virtual address: 53570 Physical Address: 834 Value: 52
+Virtual address: 22833 Physical Address: 52785 Value: 0
+Virtual address: 3782 Physical Address: 10182 Value: 3
+Virtual address: 47758 Physical Address: 56462 Value: 46
+Virtual address: 22136 Physical Address: 56696 Value: 0
+Virtual address: 22427 Physical Address: 11419 Value: -26
+Virtual address: 23867 Physical Address: 39483 Value: 78
+Virtual address: 59968 Physical Address: 10560 Value: 0
+Virtual address: 62166 Physical Address: 62422 Value: 60
+Virtual address: 6972 Physical Address: 26428 Value: 0
+Virtual address: 63684 Physical Address: 28356 Value: 0
+Virtual address: 46388 Physical Address: 50228 Value: 0
+Virtual address: 41942 Physical Address: 38870 Value: 40
+Virtual address: 36524 Physical Address: 14508 Value: 0
+Virtual address: 9323 Physical Address: 22891 Value: 26
+Virtual address: 31114 Physical Address: 62090 Value: 30
+Virtual address: 22345 Physical Address: 11337 Value: 0
+Virtual address: 46463 Physical Address: 50303 Value: 95
+Virtual address: 54671 Physical Address: 48783 Value: 99
+Virtual address: 9214 Physical Address: 48382 Value: 8
+Virtual address: 7257 Physical Address: 43097 Value: 0
+Virtual address: 33150 Physical Address: 53630 Value: 32
+Virtual address: 41565 Physical Address: 41821 Value: 0
+Virtual address: 26214 Physical Address: 49254 Value: 25
+Virtual address: 3595 Physical Address: 9995 Value: -126
+Virtual address: 17932 Physical Address: 18700 Value: 0
+Virtual address: 34660 Physical Address: 18020 Value: 0
+Virtual address: 51961 Physical Address: 27385 Value: 0
+Virtual address: 58634 Physical Address: 55050 Value: 57
+Virtual address: 57990 Physical Address: 3206 Value: 56
+Virtual address: 28848 Physical Address: 1456 Value: 0
+Virtual address: 49920 Physical Address: 59136 Value: 0
+Virtual address: 18351 Physical Address: 2479 Value: -21
+Virtual address: 53669 Physical Address: 933 Value: 0
+Virtual address: 33996 Physical Address: 42188 Value: 0
+Virtual address: 6741 Physical Address: 6741 Value: 0
+Virtual address: 64098 Physical Address: 4450 Value: 62
+Virtual address: 606 Physical Address: 17246 Value: 0
+Virtual address: 27383 Physical Address: 28919 Value: -67
+Virtual address: 63140 Physical Address: 22180 Value: 0
+Virtual address: 32228 Physical Address: 49892 Value: 0
+Virtual address: 63437 Physical Address: 17101 Value: 0
+Virtual address: 29085 Physical Address: 16541 Value: 0
+Virtual address: 65080 Physical Address: 48440 Value: 0
+Virtual address: 38753 Physical Address: 46945 Value: 0
+Virtual address: 16041 Physical Address: 21161 Value: 0
+Virtual address: 9041 Physical Address: 48209 Value: 0
+Virtual address: 42090 Physical Address: 46186 Value: 41
+Virtual address: 46388 Physical Address: 50228 Value: 0
+Virtual address: 63650 Physical Address: 28322 Value: 62
+Virtual address: 36636 Physical Address: 35612 Value: 0
+Virtual address: 21947 Physical Address: 24251 Value: 110
+Virtual address: 19833 Physical Address: 36473 Value: 0
+Virtual address: 36464 Physical Address: 14448 Value: 0
+Virtual address: 8541 Physical Address: 20061 Value: 0
+Virtual address: 12712 Physical Address: 31144 Value: 0
+Virtual address: 48955 Physical Address: 50491 Value: -50
+Virtual address: 39206 Physical Address: 55590 Value: 38
+Virtual address: 15578 Physical Address: 31962 Value: 15
+Virtual address: 49205 Physical Address: 8501 Value: 0
+Virtual address: 7731 Physical Address: 57907 Value: -116
+Virtual address: 43046 Physical Address: 17446 Value: 42
+Virtual address: 60498 Physical Address: 7250 Value: 59
+Virtual address: 9237 Physical Address: 22805 Value: 0
+Virtual address: 47706 Physical Address: 56410 Value: 46
+Virtual address: 43973 Physical Address: 57541 Value: 0
+Virtual address: 42008 Physical Address: 46104 Value: 0
+Virtual address: 27460 Physical Address: 15684 Value: 0
+Virtual address: 24999 Physical Address: 52647 Value: 105
+Virtual address: 51933 Physical Address: 27357 Value: 0
+Virtual address: 34070 Physical Address: 60950 Value: 33
+Virtual address: 65155 Physical Address: 48515 Value: -96
+Virtual address: 59955 Physical Address: 10547 Value: -116
+Virtual address: 9277 Physical Address: 22845 Value: 0
+Virtual address: 20420 Physical Address: 16836 Value: 0
+Virtual address: 44860 Physical Address: 13116 Value: 0
+Virtual address: 50992 Physical Address: 42800 Value: 0
+Virtual address: 10583 Physical Address: 27479 Value: 85
+Virtual address: 57751 Physical Address: 61335 Value: 101
+Virtual address: 23195 Physical Address: 35995 Value: -90
+Virtual address: 27227 Physical Address: 28763 Value: -106
+Virtual address: 42816 Physical Address: 19520 Value: 0
+Virtual address: 58219 Physical Address: 34155 Value: -38
+Virtual address: 37606 Physical Address: 21478 Value: 36
+Virtual address: 18426 Physical Address: 2554 Value: 17
+Virtual address: 21238 Physical Address: 37878 Value: 20
+Virtual address: 11983 Physical Address: 59855 Value: -77
+Virtual address: 48394 Physical Address: 1802 Value: 47
+Virtual address: 11036 Physical Address: 39964 Value: 0
+Virtual address: 30557 Physical Address: 16221 Value: 0
+Virtual address: 23453 Physical Address: 20637 Value: 0
+Virtual address: 49847 Physical Address: 31671 Value: -83
+Virtual address: 30032 Physical Address: 592 Value: 0
+Virtual address: 48065 Physical Address: 25793 Value: 0
+Virtual address: 6957 Physical Address: 26413 Value: 0
+Virtual address: 2301 Physical Address: 35325 Value: 0
+Virtual address: 7736 Physical Address: 57912 Value: 0
+Virtual address: 31260 Physical Address: 23324 Value: 0
+Virtual address: 17071 Physical Address: 175 Value: -85
+Virtual address: 8940 Physical Address: 46572 Value: 0
+Virtual address: 9929 Physical Address: 44745 Value: 0
+Virtual address: 45563 Physical Address: 46075 Value: 126
+Virtual address: 12107 Physical Address: 2635 Value: -46
+Number of Translated Addresses = 1000
+Page Faults = 244
+Page Fault rate = 0.244
+TLB Hits = 55
+TLB Hit rate = 0.055
+loncare@bravo:~/Operating System Project$ exit
+exit
+
+Script done on Thu 05 Apr 2018 04:40:18 PM EDT
